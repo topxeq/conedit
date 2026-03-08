@@ -9,12 +9,12 @@ import (
 
 func main() {
 	if len(os.Args) > 1 && (os.Args[1] == "-h" || os.Args[1] == "--help") {
-		fmt.Println("Console Editor - A lightweight command-line text editor")
+		fmt.Println("Conedit - A lightweight command-line text editor")
 		fmt.Println()
 		fmt.Println("Usage:")
-		fmt.Println("  console_editor [file.txt]           Open file for editing")
-		fmt.Println("  console_editor -filePath=file.txt   Open file for editing")
-		fmt.Println("  console_editor -fromSSH -sshHost=... -sshUser=... -filePath=...  Edit remote file")
+		fmt.Println("  conedit [file.txt]           Open file for editing")
+		fmt.Println("  conedit -filePath=file.txt   Open file for editing")
+		fmt.Println("  conedit -fromSSH -sshHost=... -sshUser=... -filePath=...  Edit remote file")
 		fmt.Println()
 		fmt.Println("Keyboard Shortcuts:")
 		fmt.Println("  Ctrl+S  Save")
