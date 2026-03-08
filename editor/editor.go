@@ -410,7 +410,7 @@ func (e *Editor) drawStatusBar(width, height int) {
 	case "immediate":
 		help = "Ctrl+S:Save Ctrl+K:SaveAs Ctrl+X:Exit"
 	default:
-		help = "Ctrl+S:Save Ctrl+K:SaveAs Ctrl+X:Exit"
+		help = "Ctrl+S:Save Ctrl+K:SaveAs Ctrl+Q:Cancel"
 	}
 	parts = append(parts, "|")
 	parts = append(parts, help)
@@ -800,36 +800,45 @@ func (e *Editor) handleCommand(cmd Command) {
 			return
 		}
 
-		// In file mode and immediate mode, save on exit if modified
-		if e.unsaved && e.filePath != "" {
-			var err error
-			if e.opts["fromSSH"] != "" {
-				sshConfig := &SSHConfig{
-					Host:     e.opts["sshHost"],
-					Port:     e.opts["sshPort"],
-					User:     e.opts["sshUser"],
-					Password: e.opts["sshPass"],
-					KeyPath:  e.opts["sshKeyPath"],
+		// Immediate mode: save on exit if modified, then exit
+		if e.mode == "immediate" {
+			if e.unsaved && e.filePath != "" {
+				var err error
+				if e.opts["fromSSH"] != "" {
+					sshConfig := &SSHConfig{
+						Host:     e.opts["sshHost"],
+						Port:     e.opts["sshPort"],
+						User:     e.opts["sshUser"],
+						Password: e.opts["sshPass"],
+						KeyPath:  e.opts["sshKeyPath"],
+					}
+					client := NewSSHClient(sshConfig)
+					if err = client.Connect(); err != nil {
+						e.status = "error"
+						e.running = false
+						return
+					}
+					err = client.WriteFile(e.filePath, e.buffer.Text())
+					client.Close()
+				} else {
+					err = os.WriteFile(e.filePath, []byte(e.buffer.Text()), 0644)
 				}
-				client := NewSSHClient(sshConfig)
-				if err = client.Connect(); err != nil {
+				if err != nil {
 					e.status = "error"
 					e.running = false
 					return
 				}
-				err = client.WriteFile(e.filePath, e.buffer.Text())
-				client.Close()
-			} else {
-				err = os.WriteFile(e.filePath, []byte(e.buffer.Text()), 0644)
+				e.unsaved = false
 			}
-			if err != nil {
-				e.status = "error"
-				e.running = false
-				return
-			}
-			e.unsaved = false
+			e.status = "exit"
+			e.running = false
+			return
 		}
-		e.status = "exit"
+
+		// File mode: no Ctrl+X handling (only Ctrl+Q for cancel)
+		// This should not be reached
+		e.buffer = nil
+		e.status = "cancel"
 		e.running = false
 	case CmdForceQuit:
 		// Force quit without saving in any mode
