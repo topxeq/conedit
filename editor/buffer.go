@@ -296,3 +296,30 @@ func (b *Buffer) DeleteSelection() {
 	b.cursorCol = startCol
 	b.selectionStart = nil
 }
+
+func (b *Buffer) GetVisibleRows(startRow, maxRows int) [][]rune {
+	if startRow < 0 {
+		startRow = 0
+	}
+	endRow := startRow + maxRows
+	if endRow > len(b.lines) {
+		endRow = len(b.lines)
+	}
+	return b.lines[startRow:endRow]
+}
+
+func (b *Buffer) ClampCursor(row, col int) (int, int) {
+	if row < 0 {
+		row = 0
+	}
+	if row >= len(b.lines) {
+		row = len(b.lines) - 1
+	}
+	if col < 0 {
+		col = 0
+	}
+	if col > len(b.lines[row]) {
+		col = len(b.lines[row])
+	}
+	return row, col
+}

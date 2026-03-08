@@ -25,6 +25,9 @@ type Editor struct {
 	replacePattern string
 	mode           string
 	unsaved        bool
+	// Viewport tracking for performance
+	viewportRow    int
+	viewportHeight int
 }
 
 func ConsoleEditText(defaultTextA string, optsA ...string) map[string]interface{} {
@@ -196,6 +199,11 @@ func (e *Editor) run() {
 	e.screen.SetStyle(tcell.StyleDefault)
 	e.screen.Clear()
 
+	// Initialize viewport
+	_, height := e.screen.Size()
+	e.viewportHeight = height - 1
+	e.viewportRow = 0
+
 	for e.running {
 		e.render()
 		ev := e.screen.PollEvent()
@@ -214,13 +222,38 @@ func (e *Editor) render() {
 
 	width, height := e.screen.Size()
 
-	for row := 0; row < height-1 && row < e.buffer.LineCount(); row++ {
+	// Ensure viewport is valid
+	if e.viewportRow < 0 {
+		e.viewportRow = 0
+	}
+	if e.viewportRow >= e.buffer.LineCount() {
+		e.viewportRow = max(0, e.buffer.LineCount()-1)
+	}
+
+	// Clamp cursor to valid position
+	cursorRow, cursorCol := e.buffer.GetCursor()
+	cursorRow, cursorCol = e.buffer.ClampCursor(cursorRow, cursorCol)
+	e.buffer.SetCursor(cursorRow, cursorCol)
+
+	// Adjust viewport to keep cursor visible
+	e.viewportHeight = height - 1
+	if cursorRow < e.viewportRow {
+		e.viewportRow = cursorRow
+	}
+	if cursorRow >= e.viewportRow+e.viewportHeight {
+		e.viewportRow = cursorRow - e.viewportHeight + 1
+	}
+
+	// Render only visible lines
+	screenRow := 0
+	for row := e.viewportRow; row < e.buffer.LineCount() && screenRow < e.viewportHeight; row++ {
 		line := e.buffer.lines[row]
 		lineStr := string(line)
 
 		if e.wrap && width > 0 {
 			visualWidth := CalculateVisualWidth(lineStr)
 			if visualWidth > width {
+				// Handle word wrapping for long lines
 				startRune := 0
 				visualCol := 0
 				runeIdx := 0
@@ -232,9 +265,9 @@ func (e *Editor) render() {
 						charWidth = 8
 					}
 					if visualCol+charWidth > width {
-						e.drawLine(row, string(line[startRune:runeIdx]), width)
-						row++
-						if row >= height-1 {
+						e.drawLine(screenRow, string(line[startRune:runeIdx]), width)
+						screenRow++
+						if screenRow >= e.viewportHeight {
 							break
 						}
 						startRune = runeIdx
@@ -243,15 +276,16 @@ func (e *Editor) render() {
 					visualCol += charWidth
 					runeIdx++
 				}
-				if startRune < len(line) {
-					e.drawLine(row, string(line[startRune:]), width)
+				if startRune < len(line) && screenRow < e.viewportHeight {
+					e.drawLine(screenRow, string(line[startRune:]), width)
 				}
 			} else {
-				e.drawLine(row, lineStr, width)
+				e.drawLine(screenRow, lineStr, width)
 			}
 		} else {
-			e.drawLine(row, lineStr, width)
+			e.drawLine(screenRow, lineStr, width)
 		}
+		screenRow++
 	}
 
 	e.drawStatusBar(width, height)
@@ -262,24 +296,28 @@ func (e *Editor) render() {
 	e.screen.Show()
 }
 
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 func (e *Editor) drawCursor(width, height int) {
 	if e.buffer == nil {
 		return
 	}
 	row, col := e.buffer.GetCursor()
 
-	if row >= e.buffer.LineCount() {
-		row = e.buffer.LineCount() - 1
-	}
-	if row < 0 {
-		row = 0
-	}
+	// Clamp cursor
+	row, col = e.buffer.ClampCursor(row, col)
 
 	line := e.buffer.lines[row]
 	if col > len(line) {
 		col = len(line)
 	}
 
+	// Calculate visual column based on character widths
 	visualCol := 0
 	for i := 0; i < col && i < len(line); i++ {
 		r := line[i]
@@ -292,12 +330,14 @@ func (e *Editor) drawCursor(width, height int) {
 		}
 	}
 
-	drawRow := row
+	// Calculate screen position relative to viewport
+	drawRow := row - e.viewportRow
 	drawCol := visualCol
 
+	// Handle word wrap offset
 	if e.wrap && width > 0 {
 		wrappedLineOffset := 0
-		for r := 0; r < row; r++ {
+		for r := e.viewportRow; r < row; r++ {
 			lineStr := string(e.buffer.lines[r])
 			visualWidth := CalculateVisualWidth(lineStr)
 			if visualWidth > width {
@@ -310,18 +350,20 @@ func (e *Editor) drawCursor(width, height int) {
 		if fullVisualWidth > width {
 			currentLineWrapped = visualCol / width
 		}
-		drawRow = row + wrappedLineOffset + currentLineWrapped
+		drawRow = row - e.viewportRow + wrappedLineOffset + currentLineWrapped
 		drawCol = visualCol % width
 	}
 
-	if drawRow >= height-1 {
-		drawRow = height - 2
+	// Ensure cursor is within visible area
+	if drawRow < 0 || drawRow >= height-1 {
+		return // Cursor is outside visible area
 	}
 	if drawCol >= width {
 		drawCol = width - 1
 	}
 
-	if drawRow >= 0 && drawCol >= 0 && drawRow < height-1 && drawCol < width {
+	// Draw cursor
+	if drawCol >= 0 {
 		if col < len(line) {
 			r := line[col]
 			e.screen.SetContent(drawCol, drawRow, r, nil, tcell.StyleDefault.Reverse(true))
