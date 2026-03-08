@@ -4,6 +4,8 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/topxeq/conedit)](https://goreportcard.com/report/github.com/topxeq/conedit)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+**[🌏 中文文档](README_zh.md)**
+
 A lightweight, embeddable terminal text editor library for Go with UTF-8/Chinese support and SSH capability — no CGO required.
 
 ## Features
@@ -131,14 +133,6 @@ Usage:
 | `-sshKeyPath=PATH` | SSH private key path |
 | `-mem` | Force in-memory processing (no temp files) |
 | `-tmpPath=PATH` | Custom temp directory for large files |
-
-## Modes
-
-| Mode | Description | Return Status |
-|------|-------------|---------------|
-| `default` | Simple text input, no file operations | `ok`, `cancel` |
-| `file` | Open/edit file, return after save action | `save`, `saveAs`, `cancel`, `error` |
-| `immediate` | Auto-save on exit, direct file operations | `exit`, `cancel`, `error` |
 
 ## Return Values
 
