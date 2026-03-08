@@ -105,6 +105,7 @@ Usage:
 | Option | Description |
 |--------|-------------|
 | `-filePath=PATH` | File path to edit |
+| `-mode=MODE` | Editor mode: `default`, `file`, `immediate` (default: `file`) |
 | `-fromSSH` | Edit file on SSH server |
 | `-sshHost=HOST` | SSH host |
 | `-sshPort=PORT` | SSH port (default: 22) |
@@ -113,6 +114,14 @@ Usage:
 | `-sshKeyPath=PATH` | SSH private key path |
 | `-mem` | Force in-memory processing (no temp files) |
 | `-tmpPath=PATH` | Custom temp directory for large files |
+
+## Modes
+
+| Mode | Description | Return Status |
+|------|-------------|---------------|
+| `default` | Simple text input, no file operations | `ok`, `cancel` |
+| `file` | Open/edit file, return after save action | `save`, `saveAs`, `cancel`, `error` |
+| `immediate` | Auto-save on exit, direct file operations | `exit`, `cancel`, `error` |
 
 ## Return Values
 

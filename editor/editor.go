@@ -23,12 +23,18 @@ type Editor struct {
 	findRow        int
 	findCol        int
 	replacePattern string
+	mode           string
+	unsaved        bool
 }
 
 func ConsoleEditText(defaultTextA string, optsA ...string) map[string]interface{} {
 	opts := ParseOpts(optsA)
 
 	text := defaultTextA
+	mode := opts["mode"]
+	if mode == "" {
+		mode = "default"
+	}
 
 	filePath := opts["filePath"]
 	if filePath == "" {
@@ -40,26 +46,38 @@ func ConsoleEditText(defaultTextA string, optsA ...string) map[string]interface{
 		}
 	}
 
-	if opts["fromSSH"] != "" {
-		sshConfig := &SSHConfig{
-			Host:     opts["sshHost"],
-			Port:     opts["sshPort"],
-			User:     opts["sshUser"],
-			Password: opts["sshPass"],
-			KeyPath:  opts["sshKeyPath"],
-		}
-		client := NewSSHClient(sshConfig)
-		if err := client.Connect(); err != nil {
-			return map[string]interface{}{
-				"text":   "",
-				"status": "error",
-				"error":  err.Error(),
+	if mode == "file" || mode == "immediate" {
+		if opts["fromSSH"] != "" {
+			sshConfig := &SSHConfig{
+				Host:     opts["sshHost"],
+				Port:     opts["sshPort"],
+				User:     opts["sshUser"],
+				Password: opts["sshPass"],
+				KeyPath:  opts["sshKeyPath"],
 			}
-		}
-		defer client.Close()
+			client := NewSSHClient(sshConfig)
+			if err := client.Connect(); err != nil {
+				return map[string]interface{}{
+					"text":   "",
+					"status": "error",
+					"error":  err.Error(),
+				}
+			}
+			defer client.Close()
 
-		if filePath != "" {
-			content, err := client.ReadFile(filePath)
+			if filePath != "" {
+				content, err := client.ReadFile(filePath)
+				if err != nil {
+					return map[string]interface{}{
+						"text":   "",
+						"status": "error",
+						"error":  err.Error(),
+					}
+				}
+				text = content
+			}
+		} else if filePath != "" {
+			data, err := os.ReadFile(filePath)
 			if err != nil {
 				return map[string]interface{}{
 					"text":   "",
@@ -67,36 +85,26 @@ func ConsoleEditText(defaultTextA string, optsA ...string) map[string]interface{
 					"error":  err.Error(),
 				}
 			}
-			text = content
+			text = string(data)
 		}
-	} else if filePath != "" {
-		data, err := os.ReadFile(filePath)
-		if err != nil {
-			return map[string]interface{}{
-				"text":   "",
-				"status": "error",
-				"error":  err.Error(),
-			}
-		}
-		text = string(data)
-	}
 
-	if opts["mem"] == "" && len(text) > 10*1024*1024 {
-		tmpPath := opts["tmpPath"]
-		if tmpPath == "" {
-			tmpPath = os.TempDir()
-		}
-		tmpFile, err := os.CreateTemp(tmpPath, "editor_*.tmp")
-		if err != nil {
-			return map[string]interface{}{
-				"text":   "",
-				"status": "error",
-				"error":  err.Error(),
+		if opts["mem"] == "" && len(text) > 10*1024*1024 {
+			tmpPath := opts["tmpPath"]
+			if tmpPath == "" {
+				tmpPath = os.TempDir()
 			}
+			tmpFile, err := os.CreateTemp(tmpPath, "editor_*.tmp")
+			if err != nil {
+				return map[string]interface{}{
+					"text":   "",
+					"status": "error",
+					"error":  err.Error(),
+				}
+			}
+			tmpFile.WriteString(text)
+			tmpFile.Close()
+			defer os.Remove(tmpFile.Name())
 		}
-		tmpFile.WriteString(text)
-		tmpFile.Close()
-		defer os.Remove(tmpFile.Name())
 	}
 
 	screen, err := tcell.NewScreen()
@@ -125,33 +133,63 @@ func ConsoleEditText(defaultTextA string, optsA ...string) map[string]interface{
 		wrap:     true,
 		status:   "cancel",
 		filePath: filePath,
+		mode:     mode,
 	}
 
 	editor.run()
 
-	if editor.status == "error" {
-		return map[string]interface{}{
-			"text":   "",
-			"status": "error",
-			"error":  "save failed",
+	switch editor.mode {
+	case "default":
+		if editor.status == "ok" {
+			return map[string]interface{}{
+				"text":   editor.buffer.Text(),
+				"status": "ok",
+			}
 		}
-	}
-
-	if editor.status == "cancel" || editor.buffer == nil {
 		return map[string]interface{}{
 			"text":   "",
 			"status": "cancel",
 		}
+	case "immediate":
+		if editor.status == "exit" {
+			return map[string]interface{}{
+				"text":   editor.buffer.Text(),
+				"status": "exit",
+			}
+		} else if editor.status == "error" {
+			return map[string]interface{}{
+				"text":   "",
+				"status": "error",
+				"error":  "save failed",
+			}
+		}
+		return map[string]interface{}{
+			"text":   "",
+			"status": "cancel",
+		}
+	default:
+		if editor.status == "error" {
+			return map[string]interface{}{
+				"text":   "",
+				"status": "error",
+				"error":  "save failed",
+			}
+		}
+		if editor.status == "cancel" || editor.buffer == nil {
+			return map[string]interface{}{
+				"text":   "",
+				"status": "cancel",
+			}
+		}
+		result := map[string]interface{}{
+			"text":   editor.buffer.Text(),
+			"status": editor.status,
+		}
+		if editor.status == "save" || editor.status == "saveAs" {
+			result["path"] = editor.filePath
+		}
+		return result
 	}
-
-	result := map[string]interface{}{
-		"text":   editor.buffer.Text(),
-		"status": editor.status,
-	}
-	if editor.status == "save" || editor.status == "saveAs" {
-		result["path"] = editor.filePath
-	}
-	return result
 }
 
 func (e *Editor) run() {
@@ -185,7 +223,8 @@ func (e *Editor) render() {
 			if visualWidth > width {
 				startRune := 0
 				visualCol := 0
-				for i, r := range lineStr {
+				runeIdx := 0
+				for _, r := range lineStr {
 					charWidth := 1
 					if isWideRune(r) {
 						charWidth = 2
@@ -193,15 +232,16 @@ func (e *Editor) render() {
 						charWidth = 8
 					}
 					if visualCol+charWidth > width {
-						e.drawLine(row, string(line[startRune:i]), width)
+						e.drawLine(row, string(line[startRune:runeIdx]), width)
 						row++
 						if row >= height-1 {
 							break
 						}
-						startRune = i
+						startRune = runeIdx
 						visualCol = 0
 					}
 					visualCol += charWidth
+					runeIdx++
 				}
 				if startRune < len(line) {
 					e.drawLine(row, string(line[startRune:]), width)
@@ -255,8 +295,22 @@ func (e *Editor) drawCursor(width, height int) {
 	drawRow := row
 	drawCol := visualCol
 
-	if e.wrap {
-		drawRow = row
+	if e.wrap && width > 0 {
+		wrappedLineOffset := 0
+		for r := 0; r < row; r++ {
+			lineStr := string(e.buffer.lines[r])
+			visualWidth := CalculateVisualWidth(lineStr)
+			if visualWidth > width {
+				wrappedLineOffset += (visualWidth - 1) / width
+			}
+		}
+		lineStr := string(line)
+		fullVisualWidth := CalculateVisualWidth(lineStr)
+		currentLineWrapped := 0
+		if fullVisualWidth > width {
+			currentLineWrapped = visualCol / width
+		}
+		drawRow = row + wrappedLineOffset + currentLineWrapped
 		drawCol = visualCol % width
 	}
 
@@ -297,7 +351,17 @@ func (e *Editor) drawLine(row int, text string, width int) {
 func (e *Editor) drawStatusBar(width, height int) {
 	row, col := e.buffer.GetCursor()
 	cursorInfo := fmt.Sprintf("Line: %d, Col: %d", row+1, col+1)
-	status := fmt.Sprintf("Ctrl+S:Save Ctrl+K:SaveAs Ctrl+X:Exit | %s", cursorInfo)
+
+	var status string
+	switch e.mode {
+	case "default":
+		status = fmt.Sprintf("Ctrl+S:Confirm Ctrl+X:Confirm Ctrl+Q:Cancel | %s", cursorInfo)
+	case "immediate":
+		status = fmt.Sprintf("Ctrl+S:Save Ctrl+K:SaveAs Ctrl+X:Exit | %s", cursorInfo)
+	default:
+		status = fmt.Sprintf("Ctrl+S:Save Ctrl+K:SaveAs Ctrl+X:Exit | %s", cursorInfo)
+	}
+
 	if e.wrap {
 		status += " [Wrap:ON]"
 	} else {
@@ -483,10 +547,12 @@ func (e *Editor) handleEvent(ev tcell.Event) {
 		if ev.Key() == tcell.KeyRune {
 			e.buffer.Insert(e.buffer.cursorRow, e.buffer.cursorCol, []rune{ev.Rune()})
 			e.buffer.cursorCol++
+			e.unsaved = true
 		} else if ev.Key() == tcell.KeyBackspace || ev.Key() == tcell.KeyBackspace2 {
 			if e.buffer.cursorCol > 0 {
 				e.buffer.cursorCol--
 				e.buffer.Delete(e.buffer.cursorRow, e.buffer.cursorCol, 1)
+				e.unsaved = true
 			}
 		} else if ev.Key() == tcell.KeyEnter {
 			newLine := make([]rune, 0)
@@ -497,6 +563,7 @@ func (e *Editor) handleEvent(ev tcell.Event) {
 			e.buffer.lines = append(e.buffer.lines[:e.buffer.cursorRow+1], append([][]rune{newLine}, e.buffer.lines[e.buffer.cursorRow+1:]...)...)
 			e.buffer.cursorRow++
 			e.buffer.cursorCol = 0
+			e.unsaved = true
 		} else if ev.Key() == tcell.KeyUp {
 			e.buffer.ClearSelection()
 			if e.buffer.cursorRow > 0 {
@@ -561,6 +628,11 @@ func (e *Editor) handleEvent(ev tcell.Event) {
 func (e *Editor) handleCommand(cmd Command) {
 	switch cmd {
 	case CmdSave:
+		if e.mode == "default" {
+			e.status = "ok"
+			e.running = false
+			return
+		}
 		if e.filePath != "" {
 			var err error
 			if e.opts["fromSSH"] != "" {
@@ -574,6 +646,9 @@ func (e *Editor) handleCommand(cmd Command) {
 				client := NewSSHClient(sshConfig)
 				if err := client.Connect(); err != nil {
 					e.status = "error"
+					if e.mode == "immediate" {
+						e.running = false
+					}
 					return
 				}
 				defer client.Close()
@@ -583,6 +658,9 @@ func (e *Editor) handleCommand(cmd Command) {
 			}
 			if err != nil {
 				e.status = "error"
+				if e.mode == "immediate" {
+					e.running = false
+				}
 				return
 			}
 		} else {
@@ -590,9 +668,19 @@ func (e *Editor) handleCommand(cmd Command) {
 			e.running = false
 			return
 		}
-		e.status = "save"
-		e.running = false
+		if e.mode == "immediate" {
+			e.status = "exit"
+			e.running = false
+		} else {
+			e.status = "save"
+			e.running = false
+		}
 	case CmdSaveAs:
+		if e.mode == "default" {
+			e.status = "ok"
+			e.running = false
+			return
+		}
 		e.inputMode = true
 		e.inputPrompt = "Save As:"
 		e.inputBuffer = ""
@@ -612,14 +700,51 @@ func (e *Editor) handleCommand(cmd Command) {
 		}
 	case CmdUndo:
 		e.buffer.Undo()
+		e.unsaved = true
 	case CmdRedo:
 		e.buffer.Redo()
+		e.unsaved = true
 	case CmdToggleWrap:
 		e.wrap = !e.wrap
 	case CmdExit:
-		e.buffer = nil
-		e.status = "cancel"
-		e.running = false
+		if e.mode == "default" {
+			e.status = "ok"
+			e.running = false
+		} else if e.mode == "immediate" {
+			if e.unsaved && e.filePath != "" {
+				var err error
+				if e.opts["fromSSH"] != "" {
+					sshConfig := &SSHConfig{
+						Host:     e.opts["sshHost"],
+						Port:     e.opts["sshPort"],
+						User:     e.opts["sshUser"],
+						Password: e.opts["sshPass"],
+						KeyPath:  e.opts["sshKeyPath"],
+					}
+					client := NewSSHClient(sshConfig)
+					if err = client.Connect(); err != nil {
+						e.status = "error"
+						e.running = false
+						return
+					}
+					defer client.Close()
+					err = client.WriteFile(e.filePath, e.buffer.Text())
+				} else {
+					err = os.WriteFile(e.filePath, []byte(e.buffer.Text()), 0644)
+				}
+				if err != nil {
+					e.status = "error"
+					e.running = false
+					return
+				}
+			}
+			e.status = "exit"
+			e.running = false
+		} else {
+			e.buffer = nil
+			e.status = "cancel"
+			e.running = false
+		}
 	case CmdForceQuit:
 		e.buffer = nil
 		e.status = "cancel"
