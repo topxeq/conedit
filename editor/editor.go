@@ -645,6 +645,9 @@ func (e *Editor) handleCommand(cmd Command) {
 			e.running = false
 			return
 		}
+
+		// In file mode and immediate mode, save but continue editing
+		// Exit only on Ctrl+X
 		if e.filePath != "" {
 			var err error
 			if e.opts["fromSSH"] != "" {
@@ -658,10 +661,7 @@ func (e *Editor) handleCommand(cmd Command) {
 				client := NewSSHClient(sshConfig)
 				if err := client.Connect(); err != nil {
 					e.status = "error"
-					if e.mode == "immediate" {
-						e.running = false
-					}
-					return
+					return // Don't exit, let user retry
 				}
 				err = client.WriteFile(e.filePath, e.buffer.Text())
 				client.Close()
@@ -670,22 +670,17 @@ func (e *Editor) handleCommand(cmd Command) {
 			}
 			if err != nil {
 				e.status = "error"
-				if e.mode == "immediate" {
-					e.running = false
-				}
-				return
+				return // Don't exit, let user fix the issue
 			}
-		} else {
-			e.status = "saveAs"
-			e.running = false
-			return
-		}
-		if e.mode == "immediate" {
-			e.status = "exit"
-			e.running = false
-		} else {
+			// Save succeeded, clear unsaved flag
+			e.unsaved = false
+			// Set status to "save" but don't exit
 			e.status = "save"
-			e.running = false
+		} else {
+			// No file path, prompt for Save As
+			e.inputMode = true
+			e.inputPrompt = "Save As:"
+			e.inputBuffer = ""
 		}
 	case CmdSaveAs:
 		if e.mode == "default" {
@@ -693,6 +688,7 @@ func (e *Editor) handleCommand(cmd Command) {
 			e.running = false
 			return
 		}
+		// In file mode and immediate mode, prompt for file path
 		e.inputMode = true
 		e.inputPrompt = "Save As:"
 		e.inputBuffer = ""
@@ -724,44 +720,45 @@ func (e *Editor) handleCommand(cmd Command) {
 		if e.mode == "default" {
 			e.status = "ok"
 			e.running = false
-		} else if e.mode == "immediate" {
-			if e.unsaved && e.filePath != "" {
-				var err error
-				if e.opts["fromSSH"] != "" {
-					sshConfig := &SSHConfig{
-						Host:     e.opts["sshHost"],
-						Port:     e.opts["sshPort"],
-						User:     e.opts["sshUser"],
-						Password: e.opts["sshPass"],
-						KeyPath:  e.opts["sshKeyPath"],
-					}
-					client := NewSSHClient(sshConfig)
-					if err = client.Connect(); err != nil {
-						e.status = "error"
-						e.running = false
-						return
-					}
-					err = client.WriteFile(e.filePath, e.buffer.Text())
-					client.Close()
-				} else {
-					err = os.WriteFile(e.filePath, []byte(e.buffer.Text()), 0644)
+			return
+		}
+
+		// In file mode and immediate mode, save on exit if modified
+		if e.unsaved && e.filePath != "" {
+			var err error
+			if e.opts["fromSSH"] != "" {
+				sshConfig := &SSHConfig{
+					Host:     e.opts["sshHost"],
+					Port:     e.opts["sshPort"],
+					User:     e.opts["sshUser"],
+					Password: e.opts["sshPass"],
+					KeyPath:  e.opts["sshKeyPath"],
 				}
-				if err != nil {
+				client := NewSSHClient(sshConfig)
+				if err = client.Connect(); err != nil {
 					e.status = "error"
 					e.running = false
 					return
 				}
+				err = client.WriteFile(e.filePath, e.buffer.Text())
+				client.Close()
+			} else {
+				err = os.WriteFile(e.filePath, []byte(e.buffer.Text()), 0644)
 			}
-			e.status = "exit"
-			e.running = false
-		} else {
-			e.buffer = nil
-			e.status = "cancel"
-			e.running = false
+			if err != nil {
+				e.status = "error"
+				e.running = false
+				return
+			}
+			e.unsaved = false
 		}
+		e.status = "exit"
+		e.running = false
 	case CmdForceQuit:
+		// Force quit without saving in any mode
 		e.buffer = nil
 		e.status = "cancel"
+		e.running = false
 	case CmdFind:
 		e.inputMode = true
 		e.inputPrompt = "Find:"

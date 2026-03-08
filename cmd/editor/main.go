@@ -13,7 +13,7 @@ func main() {
 		fmt.Println("Conedit - A lightweight command-line text editor")
 		fmt.Println()
 		fmt.Println("Usage:")
-		fmt.Println("  conedit                      Open editor in default mode (text input)")
+		fmt.Println("  conedit                      Open editor for text input (default mode)")
 		fmt.Println("  conedit [file.txt]           Open file for editing (immediate mode)")
 		fmt.Println("  conedit -mode=file file.txt  Open file for editing (file mode)")
 		fmt.Println("  conedit -mode=default        Open editor for text input")
@@ -21,10 +21,10 @@ func main() {
 		fmt.Println("  conedit -fromSSH -sshHost=... -sshUser=... -filePath=...  Edit remote file")
 		fmt.Println()
 		fmt.Println("Keyboard Shortcuts:")
-		fmt.Println("  Ctrl+S  Save / Confirm")
+		fmt.Println("  Ctrl+S  Save (in file/immediate mode)")
 		fmt.Println("  Ctrl+K  Save As")
-		fmt.Println("  Ctrl+X  Exit / Confirm")
-		fmt.Println("  Ctrl+Q  Force Quit / Cancel")
+		fmt.Println("  Ctrl+X  Exit (prompts to save if modified in file mode)")
+		fmt.Println("  Ctrl+Q  Force Quit (discard changes)")
 		fmt.Println("  Ctrl+W  Toggle Word Wrap")
 		fmt.Println("  Ctrl+C  Copy")
 		fmt.Println("  Ctrl+V  Paste")
@@ -36,8 +36,8 @@ func main() {
 		fmt.Println()
 		fmt.Println("Modes:")
 		fmt.Println("  default    - Text input mode, no file operations (returns ok/cancel)")
-		fmt.Println("  file       - Edit file, return after save action (returns save/saveAs/cancel)")
-		fmt.Println("  immediate  - Edit file with auto-save on exit (returns exit/cancel/error)")
+		fmt.Println("  file       - Edit file, continue after save, prompt on exit if modified")
+		fmt.Println("  immediate  - Edit file, auto-save on exit (returns exit/cancel/error)")
 		fmt.Println()
 		fmt.Println("Options:")
 		fmt.Println("  -mode=MODE        Editor mode: default, file, immediate")
@@ -55,60 +55,64 @@ func main() {
 
 	args := os.Args[1:]
 	mode := ""
+	filePath := ""
 
-	hasMode := false
-	hasFilePath := false
-	hasPositionalFile := ""
-
+	// Parse explicit mode and file path
 	for _, arg := range args {
 		if strings.HasPrefix(arg, "-mode=") {
-			hasMode = true
 			mode = strings.TrimPrefix(arg, "-mode=")
 		}
 		if strings.HasPrefix(arg, "-filePath=") {
-			hasFilePath = true
+			filePath = strings.TrimPrefix(arg, "-filePath=")
 		}
-		if !strings.HasPrefix(arg, "-") && arg != "" {
-			hasPositionalFile = arg
+		if !strings.HasPrefix(arg, "-") && arg != "" && filePath == "" {
+			filePath = arg
 		}
 	}
 
-	if !hasMode {
-		if hasFilePath || hasPositionalFile != "" {
+	// Auto-infer mode if not specified
+	if mode == "" {
+		if filePath != "" {
 			mode = "immediate"
 		} else {
 			mode = "default"
 		}
 	}
 
-	hasModeArg := false
+	// Reconstruct args with explicit mode
+	finalArgs := []string{"-mode=" + mode}
+	if filePath != "" && !hasArg(args, "-filePath=") {
+		finalArgs = append(finalArgs, "-filePath="+filePath)
+	}
 	for _, arg := range args {
-		if strings.HasPrefix(arg, "-mode=") {
-			hasModeArg = true
-			break
+		if strings.HasPrefix(arg, "-") {
+			continue
 		}
+		if arg == filePath && hasArg(args, "-filePath=") {
+			continue
+		}
+		finalArgs = append(finalArgs, arg)
 	}
 
-	if !hasModeArg && hasPositionalFile != "" {
-		args = append([]string{"-mode=" + mode}, args...)
-	} else if !hasModeArg {
-		args = append([]string{"-mode=" + mode}, args...)
-	}
-
-	result := editor.ConsoleEditText("", args...)
+	result := editor.ConsoleEditText("", finalArgs...)
 	if result["error"] != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", result["error"])
 		os.Exit(1)
 	}
 
 	status := result["status"]
-	if status == "save" || status == "saveAs" {
-		if path, ok := result["path"].(string); ok {
-			fmt.Printf("File saved: %s\n", path)
-		}
-	} else if status == "exit" {
-		if path, ok := result["path"].(string); ok {
+	if status == "save" || status == "saveAs" || status == "exit" {
+		if path, ok := result["path"].(string); ok && path != "" {
 			fmt.Printf("File saved: %s\n", path)
 		}
 	}
+}
+
+func hasArg(args []string, prefix string) bool {
+	for _, arg := range args {
+		if strings.HasPrefix(arg, prefix) {
+			return true
+		}
+	}
+	return false
 }
