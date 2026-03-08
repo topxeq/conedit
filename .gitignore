@@ -1,7 +1,7 @@
 # Binaries
-console_editor
-console_editor.exe
-console_editor_linux
+conedit
+conedit.exe
+conedit_linux
 *.exe
 *.exe~
 *.dll

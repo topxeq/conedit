@@ -63,23 +63,23 @@ func main() {
 Build the command-line editor:
 
 ```bash
-go build -o console_editor ./cmd/editor
+go build -o conedit ./cmd/editor
 ```
 
 Usage:
 
 ```bash
 # Edit a file
-./console_editor file.txt
+./conedit file.txt
 
 # Edit with options
-./console_editor -filePath=file.txt
+./conedit -filePath=file.txt
 
 # Edit remote file via SSH
-./console_editor -fromSSH -sshHost=192.168.1.100 -sshUser=root -filePath=/remote/file.txt
+./conedit -fromSSH -sshHost=192.168.1.100 -sshUser=root -filePath=/remote/file.txt
 
 # Show help
-./console_editor --help
+./conedit --help
 ```
 
 ## Keyboard Shortcuts
