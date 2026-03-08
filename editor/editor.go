@@ -352,26 +352,45 @@ func (e *Editor) drawStatusBar(width, height int) {
 	row, col := e.buffer.GetCursor()
 	cursorInfo := fmt.Sprintf("Line: %d, Col: %d", row+1, col+1)
 
-	var status string
+	// Build status bar content
+	var parts []string
+
+	// Show unsaved indicator
+	if e.unsaved && e.mode != "default" {
+		parts = append(parts, "[MODIFIED]")
+	}
+
+	// Show mode-specific help
+	var help string
 	switch e.mode {
 	case "default":
-		status = fmt.Sprintf("Ctrl+S:Confirm Ctrl+X:Confirm Ctrl+Q:Cancel | %s", cursorInfo)
+		help = "Ctrl+S:Confirm Ctrl+X:Confirm Ctrl+Q:Cancel"
 	case "immediate":
-		status = fmt.Sprintf("Ctrl+S:Save Ctrl+K:SaveAs Ctrl+X:Exit | %s", cursorInfo)
+		help = "Ctrl+S:Save Ctrl+K:SaveAs Ctrl+X:Exit"
 	default:
-		status = fmt.Sprintf("Ctrl+S:Save Ctrl+K:SaveAs Ctrl+X:Exit | %s", cursorInfo)
+		help = "Ctrl+S:Save Ctrl+K:SaveAs Ctrl+X:Exit"
 	}
+	parts = append(parts, "|")
+	parts = append(parts, help)
 
+	// Add cursor info
+	parts = append(parts, "|", cursorInfo)
+
+	// Add wrap status
 	if e.wrap {
-		status += " [Wrap:ON]"
+		parts = append(parts, "|", "[Wrap:ON]")
 	} else {
-		status += " [Wrap:OFF]"
+		parts = append(parts, "|", "[Wrap:OFF]")
 	}
 
+	status := strings.Join(parts, " ")
+
+	// Draw status bar background
 	for i := 0; i < width; i++ {
 		e.screen.SetContent(i, height-1, ' ', nil, tcell.StyleDefault.Background(tcell.ColorBlue).Foreground(tcell.ColorWhite))
 	}
 
+	// Draw status bar text
 	for i, r := range status {
 		if i < width {
 			e.screen.SetContent(i, height-1, r, nil, tcell.StyleDefault.Background(tcell.ColorBlue).Foreground(tcell.ColorWhite))
