@@ -825,11 +825,11 @@ func (e *Editor) handleCommand(cmd Command) {
 		e.inputPrompt = "Save As:"
 		e.inputBuffer = ""
 	case CmdCopy:
+		// Copy: copy selected text to clipboard, do NOT delete
 		selected := e.buffer.GetSelectedText()
 		if selected != "" {
 			e.clipBoard = selected
-			e.buffer.DeleteSelection()
-			e.unsaved = true
+			// Do NOT delete selection - that would be Cut, not Copy
 		}
 	case CmdPaste:
 		if e.clipBoard != "" {
