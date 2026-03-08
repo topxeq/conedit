@@ -458,8 +458,15 @@ func (e *Editor) drawInputMode(width, height int) {
 func (e *Editor) handleInputMode(ev *tcell.EventKey) {
 	if ev.Key() == tcell.KeyEscape {
 		if e.inputPrompt == "Save As:" {
-			e.status = "cancel"
-			e.running = false
+			// File mode: cancel and exit
+			// Immediate mode: cancel and continue editing
+			if e.mode == "file" {
+				e.status = "cancel"
+				e.running = false
+			} else {
+				e.inputMode = false
+				e.inputBuffer = ""
+			}
 			return
 		}
 		e.inputMode = false
@@ -517,7 +524,7 @@ func (e *Editor) handleInputMode(ev *tcell.EventKey) {
 					client := NewSSHClient(sshConfig)
 					if err = client.Connect(); err != nil {
 						e.status = "error"
-						if e.mode == "immediate" {
+						if e.mode == "file" {
 							e.running = false
 						}
 						return
@@ -529,16 +536,16 @@ func (e *Editor) handleInputMode(ev *tcell.EventKey) {
 				}
 				if err != nil {
 					e.status = "error"
-					if e.mode == "immediate" {
+					if e.mode == "file" {
 						e.running = false
 					}
 				} else {
 					e.filePath = e.inputBuffer
-					if e.mode == "immediate" {
-						e.status = "exit"
-						e.running = false
-					} else {
-						e.status = "saveAs"
+					e.unsaved = false
+					e.status = "saveAs"
+					// File mode: exit after save as
+					// Immediate mode: continue editing
+					if e.mode == "file" {
 						e.running = false
 					}
 				}
@@ -707,8 +714,6 @@ func (e *Editor) handleCommand(cmd Command) {
 			return
 		}
 
-		// In file mode and immediate mode, save but continue editing
-		// Exit only on Ctrl+X
 		if e.filePath != "" {
 			var err error
 			if e.opts["fromSSH"] != "" {
@@ -722,7 +727,10 @@ func (e *Editor) handleCommand(cmd Command) {
 				client := NewSSHClient(sshConfig)
 				if err := client.Connect(); err != nil {
 					e.status = "error"
-					return // Don't exit, let user retry
+					if e.mode == "file" {
+						e.running = false
+					}
+					return
 				}
 				err = client.WriteFile(e.filePath, e.buffer.Text())
 				client.Close()
@@ -731,14 +739,20 @@ func (e *Editor) handleCommand(cmd Command) {
 			}
 			if err != nil {
 				e.status = "error"
-				return // Don't exit, let user fix the issue
+				if e.mode == "file" {
+					e.running = false
+				}
+				return
 			}
-			// Save succeeded, clear unsaved flag
 			e.unsaved = false
-			// Set status to "save" but don't exit
 			e.status = "save"
+
+			// File mode: exit after save
+			// Immediate mode: continue editing
+			if e.mode == "file" {
+				e.running = false
+			}
 		} else {
-			// No file path, prompt for Save As
 			e.inputMode = true
 			e.inputPrompt = "Save As:"
 			e.inputBuffer = ""
@@ -749,7 +763,9 @@ func (e *Editor) handleCommand(cmd Command) {
 			e.running = false
 			return
 		}
-		// In file mode and immediate mode, prompt for file path
+		// Prompt for file path
+		// File mode: exit after save as is completed
+		// Immediate mode: continue editing after save as
 		e.inputMode = true
 		e.inputPrompt = "Save As:"
 		e.inputBuffer = ""
