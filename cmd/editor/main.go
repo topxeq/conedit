@@ -37,7 +37,7 @@ func main() {
 		fmt.Println("Modes:")
 		fmt.Println("  default    - Text input mode, no file operations (returns ok/cancel)")
 		fmt.Println("  file       - Edit file, save/saveAs returns immediately (returns save/saveAs/cancel)")
-		fmt.Println("  immediate  - Edit file, auto-save on Ctrl+X exit (returns exit/cancel/error)")
+		fmt.Println("  immediate  - Edit file, exit with Ctrl+X prompts to save (returns ok/cancel/error)")
 		fmt.Println()
 		fmt.Println("Options:")
 		fmt.Println("  -mode=MODE        Editor mode: default, file, immediate")

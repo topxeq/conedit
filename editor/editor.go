@@ -568,6 +568,7 @@ func (e *Editor) handleInputMode(ev *tcell.EventKey) {
 		case "Save changes? (y/n):":
 			// Immediate mode exit confirmation
 			input := strings.ToLower(strings.TrimSpace(e.inputBuffer))
+			// Default to "no" (empty input or n) - don't save
 			if input == "y" || input == "yes" {
 				// Save and exit
 				if e.filePath != "" {
@@ -598,7 +599,7 @@ func (e *Editor) handleInputMode(ev *tcell.EventKey) {
 					}
 				}
 			}
-			// Either way (y or n), exit with status "ok"
+			// Either way (y or n/empty), exit with status "ok"
 			e.status = "ok"
 			e.running = false
 		}
