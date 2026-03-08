@@ -154,10 +154,11 @@ func ConsoleEditText(defaultTextA string, optsA ...string) map[string]interface{
 			"status": "cancel",
 		}
 	case "immediate":
-		if editor.status == "exit" {
+		if editor.status == "ok" {
+			// User exited with Ctrl+X (with or without saving)
 			return map[string]interface{}{
 				"text":   editor.buffer.Text(),
-				"status": "exit",
+				"status": "ok",
 			}
 		} else if editor.status == "error" {
 			return map[string]interface{}{
@@ -166,6 +167,7 @@ func ConsoleEditText(defaultTextA string, optsA ...string) map[string]interface{
 				"error":  "save failed",
 			}
 		}
+		// Cancel (Ctrl+Q)
 		return map[string]interface{}{
 			"text":   "",
 			"status": "cancel",
@@ -408,7 +410,11 @@ func (e *Editor) drawStatusBar(width, height int) {
 	case "default":
 		help = "Ctrl+S:Confirm Ctrl+X:Confirm Ctrl+Q:Cancel"
 	case "immediate":
-		help = "Ctrl+S:Save Ctrl+K:SaveAs Ctrl+X:Exit"
+		if e.unsaved {
+			help = "Ctrl+S:Save Ctrl+K:SaveAs Ctrl+X:Exit(Confirm)"
+		} else {
+			help = "Ctrl+S:Save Ctrl+K:SaveAs Ctrl+X:Exit"
+		}
 	default:
 		help = "Ctrl+S:Save Ctrl+K:SaveAs Ctrl+Q:Cancel"
 	}
@@ -467,6 +473,12 @@ func (e *Editor) handleInputMode(ev *tcell.EventKey) {
 				e.inputMode = false
 				e.inputBuffer = ""
 			}
+			return
+		}
+		if e.inputPrompt == "Save changes? (y/n):" {
+			// Cancel exit, continue editing
+			e.inputMode = false
+			e.inputBuffer = ""
 			return
 		}
 		e.inputMode = false
@@ -553,6 +565,42 @@ func (e *Editor) handleInputMode(ev *tcell.EventKey) {
 				e.status = "cancel"
 				e.running = false
 			}
+		case "Save changes? (y/n):":
+			// Immediate mode exit confirmation
+			input := strings.ToLower(strings.TrimSpace(e.inputBuffer))
+			if input == "y" || input == "yes" {
+				// Save and exit
+				if e.filePath != "" {
+					var err error
+					if e.opts["fromSSH"] != "" {
+						sshConfig := &SSHConfig{
+							Host:     e.opts["sshHost"],
+							Port:     e.opts["sshPort"],
+							User:     e.opts["sshUser"],
+							Password: e.opts["sshPass"],
+							KeyPath:  e.opts["sshKeyPath"],
+						}
+						client := NewSSHClient(sshConfig)
+						if err = client.Connect(); err != nil {
+							e.status = "error"
+							e.running = false
+							return
+						}
+						err = client.WriteFile(e.filePath, e.buffer.Text())
+						client.Close()
+					} else {
+						err = os.WriteFile(e.filePath, []byte(e.buffer.Text()), 0644)
+					}
+					if err != nil {
+						e.status = "error"
+						e.running = false
+						return
+					}
+				}
+			}
+			// Either way (y or n), exit with status "ok"
+			e.status = "ok"
+			e.running = false
 		}
 		e.inputBuffer = ""
 	} else if ev.Key() == tcell.KeyEscape {
@@ -800,43 +848,22 @@ func (e *Editor) handleCommand(cmd Command) {
 			return
 		}
 
-		// Immediate mode: save on exit if modified, then exit
+		// Immediate mode: check if modified, prompt to save if needed
 		if e.mode == "immediate" {
 			if e.unsaved && e.filePath != "" {
-				var err error
-				if e.opts["fromSSH"] != "" {
-					sshConfig := &SSHConfig{
-						Host:     e.opts["sshHost"],
-						Port:     e.opts["sshPort"],
-						User:     e.opts["sshUser"],
-						Password: e.opts["sshPass"],
-						KeyPath:  e.opts["sshKeyPath"],
-					}
-					client := NewSSHClient(sshConfig)
-					if err = client.Connect(); err != nil {
-						e.status = "error"
-						e.running = false
-						return
-					}
-					err = client.WriteFile(e.filePath, e.buffer.Text())
-					client.Close()
-				} else {
-					err = os.WriteFile(e.filePath, []byte(e.buffer.Text()), 0644)
-				}
-				if err != nil {
-					e.status = "error"
-					e.running = false
-					return
-				}
-				e.unsaved = false
+				// Prompt user to confirm save
+				e.inputMode = true
+				e.inputPrompt = "Save changes? (y/n):"
+				e.inputBuffer = ""
+				return
 			}
-			e.status = "exit"
+			// No changes, exit directly
+			e.status = "ok"
 			e.running = false
 			return
 		}
 
 		// File mode: no Ctrl+X handling (only Ctrl+Q for cancel)
-		// This should not be reached
 		e.buffer = nil
 		e.status = "cancel"
 		e.running = false

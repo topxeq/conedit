@@ -101,9 +101,12 @@ func main() {
 	}
 
 	status := result["status"]
-	if status == "save" || status == "saveAs" || status == "exit" {
+	if status == "save" || status == "saveAs" || status == "ok" {
 		if path, ok := result["path"].(string); ok && path != "" {
 			fmt.Printf("File saved: %s\n", path)
+		} else if result["text"] != "" {
+			// immediate mode with changes saved
+			fmt.Printf("Content saved\n")
 		}
 	}
 }
