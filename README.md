@@ -69,18 +69,31 @@ go build -o conedit ./cmd/editor
 Usage:
 
 ```bash
-# Edit a file
+# Default mode - text input, no file operations
+./conedit
+
+# Open file for editing (immediate mode - auto-save on exit)
 ./conedit file.txt
 
-# Edit with options
-./conedit -filePath=file.txt
+# Explicit mode selection
+./conedit -mode=default        # Text input mode
+./conedit -mode=file file.txt  # File mode (returns after save)
+./conedit -mode=immediate file.txt  # Immediate mode (auto-save on exit)
 
 # Edit remote file via SSH
-./conedit -fromSSH -sshHost=192.168.1.100 -sshUser=root -filePath=/remote/file.txt
+./conedit -mode=immediate -fromSSH -sshHost=192.168.1.100 -sshUser=root -filePath=/remote/file.txt
 
 # Show help
 ./conedit --help
 ```
+
+### Mode Behavior
+
+| Mode | When | Behavior | Returns |
+|------|------|----------|---------|
+| `default` | No file args | Text input only | `ok`, `cancel` |
+| `file` | With file arg | Edit, return on save | `save`, `saveAs`, `cancel` |
+| `immediate` | With file arg | Edit, auto-save on exit | `exit`, `cancel`, `error` |
 
 ## Keyboard Shortcuts
 

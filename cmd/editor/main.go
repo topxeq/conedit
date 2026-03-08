@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/topxeq/conedit/editor"
 )
@@ -12,15 +13,18 @@ func main() {
 		fmt.Println("Conedit - A lightweight command-line text editor")
 		fmt.Println()
 		fmt.Println("Usage:")
-		fmt.Println("  conedit [file.txt]           Open file for editing")
-		fmt.Println("  conedit -filePath=file.txt   Open file for editing")
+		fmt.Println("  conedit                      Open editor in default mode (text input)")
+		fmt.Println("  conedit [file.txt]           Open file for editing (immediate mode)")
+		fmt.Println("  conedit -mode=file file.txt  Open file for editing (file mode)")
+		fmt.Println("  conedit -mode=default        Open editor for text input")
+		fmt.Println("  conedit -mode=immediate file.txt  Edit file with auto-save on exit")
 		fmt.Println("  conedit -fromSSH -sshHost=... -sshUser=... -filePath=...  Edit remote file")
 		fmt.Println()
 		fmt.Println("Keyboard Shortcuts:")
-		fmt.Println("  Ctrl+S  Save")
+		fmt.Println("  Ctrl+S  Save / Confirm")
 		fmt.Println("  Ctrl+K  Save As")
-		fmt.Println("  Ctrl+X  Exit")
-		fmt.Println("  Ctrl+Q  Force Quit")
+		fmt.Println("  Ctrl+X  Exit / Confirm")
+		fmt.Println("  Ctrl+Q  Force Quit / Cancel")
 		fmt.Println("  Ctrl+W  Toggle Word Wrap")
 		fmt.Println("  Ctrl+C  Copy")
 		fmt.Println("  Ctrl+V  Paste")
@@ -30,20 +34,68 @@ func main() {
 		fmt.Println("  Ctrl+H  Replace (supports regex)")
 		fmt.Println("  Ctrl+G  Goto Line")
 		fmt.Println()
+		fmt.Println("Modes:")
+		fmt.Println("  default    - Text input mode, no file operations (returns ok/cancel)")
+		fmt.Println("  file       - Edit file, return after save action (returns save/saveAs/cancel)")
+		fmt.Println("  immediate  - Edit file with auto-save on exit (returns exit/cancel/error)")
+		fmt.Println()
 		fmt.Println("Options:")
-		fmt.Println("  -filePath=PATH      File path to edit")
-		fmt.Println("  -fromSSH            Edit file on SSH server")
-		fmt.Println("  -sshHost=HOST       SSH host")
-		fmt.Println("  -sshPort=PORT       SSH port (default: 22)")
-		fmt.Println("  -sshUser=USER       SSH username")
-		fmt.Println("  -sshPass=PASS       SSH password")
-		fmt.Println("  -sshKeyPath=PATH    SSH private key path")
-		fmt.Println("  -mem                Force in-memory processing")
-		fmt.Println("  -tmpPath=PATH       Custom temp directory for large files")
+		fmt.Println("  -mode=MODE        Editor mode: default, file, immediate")
+		fmt.Println("  -filePath=PATH    File path to edit")
+		fmt.Println("  -fromSSH          Edit file on SSH server")
+		fmt.Println("  -sshHost=HOST     SSH host")
+		fmt.Println("  -sshPort=PORT     SSH port (default: 22)")
+		fmt.Println("  -sshUser=USER     SSH username")
+		fmt.Println("  -sshPass=PASS     SSH password")
+		fmt.Println("  -sshKeyPath=PATH  SSH private key path")
+		fmt.Println("  -mem              Force in-memory processing")
+		fmt.Println("  -tmpPath=PATH     Custom temp directory for large files")
 		os.Exit(0)
 	}
 
-	result := editor.ConsoleEditText("", os.Args[1:]...)
+	args := os.Args[1:]
+	mode := ""
+
+	hasMode := false
+	hasFilePath := false
+	hasPositionalFile := ""
+
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "-mode=") {
+			hasMode = true
+			mode = strings.TrimPrefix(arg, "-mode=")
+		}
+		if strings.HasPrefix(arg, "-filePath=") {
+			hasFilePath = true
+		}
+		if !strings.HasPrefix(arg, "-") && arg != "" {
+			hasPositionalFile = arg
+		}
+	}
+
+	if !hasMode {
+		if hasFilePath || hasPositionalFile != "" {
+			mode = "immediate"
+		} else {
+			mode = "default"
+		}
+	}
+
+	hasModeArg := false
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "-mode=") {
+			hasModeArg = true
+			break
+		}
+	}
+
+	if !hasModeArg && hasPositionalFile != "" {
+		args = append([]string{"-mode=" + mode}, args...)
+	} else if !hasModeArg {
+		args = append([]string{"-mode=" + mode}, args...)
+	}
+
+	result := editor.ConsoleEditText("", args...)
 	if result["error"] != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", result["error"])
 		os.Exit(1)
@@ -51,6 +103,10 @@ func main() {
 
 	status := result["status"]
 	if status == "save" || status == "saveAs" {
+		if path, ok := result["path"].(string); ok {
+			fmt.Printf("File saved: %s\n", path)
+		}
+	} else if status == "exit" {
 		if path, ok := result["path"].(string); ok {
 			fmt.Printf("File saved: %s\n", path)
 		}
