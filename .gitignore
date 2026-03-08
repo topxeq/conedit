@@ -24,3 +24,7 @@ conedit_linux
 *.swp
 *.swo
 *~
+
+# Worktrees
+.worktrees/
+worktrees/
