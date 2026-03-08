@@ -1,6 +1,10 @@
 # Conedit - Console Text Editor Library
 
-A lightweight command-line text editor library for Go with SSH support.
+[![Go Reference](https://pkg.go.dev/badge/github.com/topxeq/conedit.svg)](https://pkg.go.dev/github.com/topxeq/conedit)
+[![Go Report Card](https://goreportcard.com/badge/github.com/topxeq/conedit)](https://goreportcard.com/report/github.com/topxeq/conedit)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+A lightweight, embeddable terminal text editor library for Go with UTF-8/Chinese support and SSH capability — no CGO required.
 
 ## Features
 
@@ -159,4 +163,4 @@ The `ConsoleEditText` function returns a `map[string]interface{}` with the follo
 
 ## License
 
-MIT License
+[MIT License](LICENSE)
