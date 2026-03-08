@@ -554,16 +554,22 @@ func (e *Editor) handleInputMode(ev *tcell.EventKey) {
 				} else {
 					e.filePath = e.inputBuffer
 					e.unsaved = false
-					e.status = "saveAs"
-					// File mode: exit after save as
-					// Immediate mode: continue editing
+					// File mode: set status and exit after save as
+					// Immediate mode: don't change status, continue editing
 					if e.mode == "file" {
+						e.status = "saveAs"
 						e.running = false
 					}
 				}
 			} else {
-				e.status = "cancel"
-				e.running = false
+				// Empty path - cancel
+				e.inputMode = false
+				e.inputBuffer = ""
+				if e.mode == "file" {
+					e.status = "cancel"
+					e.running = false
+				}
+				return
 			}
 		case "Save changes? (y/n):":
 			// Immediate mode exit confirmation
@@ -794,11 +800,11 @@ func (e *Editor) handleCommand(cmd Command) {
 				return
 			}
 			e.unsaved = false
-			e.status = "save"
 
-			// File mode: exit after save
-			// Immediate mode: continue editing
+			// File mode: set status and exit after save
+			// Immediate mode: don't change status, continue editing
 			if e.mode == "file" {
+				e.status = "save"
 				e.running = false
 			}
 		} else {
