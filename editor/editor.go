@@ -431,6 +431,7 @@ func (e *Editor) handleInputMode(ev *tcell.EventKey) {
 					e.buffer.SetCursor(row, col)
 					e.findRow = row
 					e.findCol = col
+					e.unsaved = true
 				}
 			}
 			e.inputPrompt = "Find:"
@@ -455,24 +456,35 @@ func (e *Editor) handleInputMode(ev *tcell.EventKey) {
 					client := NewSSHClient(sshConfig)
 					if err = client.Connect(); err != nil {
 						e.status = "error"
-						e.running = false
+						if e.mode == "immediate" {
+							e.running = false
+						}
 						return
 					}
-					defer client.Close()
 					err = client.WriteFile(e.inputBuffer, e.buffer.Text())
+					client.Close()
 				} else {
 					err = os.WriteFile(e.inputBuffer, []byte(e.buffer.Text()), 0644)
 				}
 				if err != nil {
 					e.status = "error"
+					if e.mode == "immediate" {
+						e.running = false
+					}
 				} else {
-					e.status = "saveAs"
 					e.filePath = e.inputBuffer
+					if e.mode == "immediate" {
+						e.status = "exit"
+						e.running = false
+					} else {
+						e.status = "saveAs"
+						e.running = false
+					}
 				}
 			} else {
 				e.status = "cancel"
+				e.running = false
 			}
-			e.running = false
 		}
 		e.inputBuffer = ""
 	} else if ev.Key() == tcell.KeyEscape {
@@ -651,8 +663,8 @@ func (e *Editor) handleCommand(cmd Command) {
 					}
 					return
 				}
-				defer client.Close()
 				err = client.WriteFile(e.filePath, e.buffer.Text())
+				client.Close()
 			} else {
 				err = os.WriteFile(e.filePath, []byte(e.buffer.Text()), 0644)
 			}
@@ -689,6 +701,7 @@ func (e *Editor) handleCommand(cmd Command) {
 		if selected != "" {
 			e.clipBoard = selected
 			e.buffer.DeleteSelection()
+			e.unsaved = true
 		}
 	case CmdPaste:
 		if e.clipBoard != "" {
@@ -697,6 +710,7 @@ func (e *Editor) handleCommand(cmd Command) {
 			}
 			e.buffer.Insert(e.buffer.cursorRow, e.buffer.cursorCol, []rune(e.clipBoard))
 			e.buffer.cursorCol += len([]rune(e.clipBoard))
+			e.unsaved = true
 		}
 	case CmdUndo:
 		e.buffer.Undo()
@@ -727,8 +741,8 @@ func (e *Editor) handleCommand(cmd Command) {
 						e.running = false
 						return
 					}
-					defer client.Close()
 					err = client.WriteFile(e.filePath, e.buffer.Text())
+					client.Close()
 				} else {
 					err = os.WriteFile(e.filePath, []byte(e.buffer.Text()), 0644)
 				}
