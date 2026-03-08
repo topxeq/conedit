@@ -1,0 +1,26 @@
+# Binaries
+console_editor
+console_editor.exe
+console_editor_linux
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Temporary files
+*.tmp
+*.temp
+
+# Editor directories and files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
